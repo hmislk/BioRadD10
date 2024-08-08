@@ -1,0 +1,23 @@
+{
+    "middlewareSettings": {
+        "analyzerDetails": {
+            "analyzerName": "D10",
+            "serialNumber": "12345-67890",
+            "analyzerId": "D10",
+            "baseURL": "http://172.16.241.71/Dia/DiaWeb.cgi/"
+        },
+        "limsSettings": {
+            "pullSampleDataEndpoint": "http://example.com/api/pullSampleData",
+            "pushSampleAcceptanceEndpoint": "http://example.com/api/pushSampleAcceptance",
+            "pushResultsEndpoint": "http://example.com/api/pushResults",
+            "pullResultsEndpoint": "http://example.com/api/pullResults",
+            "username": "buddhika",
+            "password": "Buddhika123@",
+            "departmentId": "12"
+        },
+        "communication": {
+            "queryFrequencyInMinutes": 15,
+            "queryForYesterdayResults": true
+        }
+    }
+}
