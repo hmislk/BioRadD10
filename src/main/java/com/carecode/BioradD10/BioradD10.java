@@ -1,5 +1,19 @@
 package com.carecode.BioradD10;
 
+import org.hl7.fhir.r4.model.Observation;
+import org.hl7.fhir.r4.model.Identifier;
+import org.hl7.fhir.r4.model.CodeableConcept;
+import org.hl7.fhir.r4.model.Quantity;
+import ca.uhn.fhir.context.FhirContext;
+import ca.uhn.fhir.rest.client.api.IGenericClient;
+import ca.uhn.fhir.rest.api.MethodOutcome;
+import ca.uhn.fhir.rest.client.interceptor.BasicAuthInterceptor;
+import org.json.JSONObject;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
+
 import java.io.*;
 import java.net.*;
 import java.nio.file.Files;
@@ -8,10 +22,6 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.logging.*;
-import org.json.JSONObject;
-import org.jsoup.*;
-import org.jsoup.nodes.*;
-import org.jsoup.select.*;
 
 public class BioradD10 {
 
@@ -29,6 +39,9 @@ public class BioradD10 {
     private static String baseURL;
     private static int queryFrequencyInMinutes;
     private static boolean queryForYesterdayResults;
+    private static String fhirServerBaseUrl;
+    private static String username;
+    private static String password;
 
     public BioradD10() {
     }
@@ -47,10 +60,14 @@ public class BioradD10 {
             JSONObject middlewareSettings = config.getJSONObject("middlewareSettings");
             JSONObject analyzerDetails = middlewareSettings.getJSONObject("analyzerDetails");
             JSONObject communicationSettings = middlewareSettings.getJSONObject("communication");
+            JSONObject limsSettings = middlewareSettings.getJSONObject("limsSettings");
 
             baseURL = analyzerDetails.getString("baseURL");
             queryFrequencyInMinutes = communicationSettings.getInt("queryFrequencyInMinutes");
             queryForYesterdayResults = communicationSettings.getBoolean("queryForYesterdayResults");
+            fhirServerBaseUrl = limsSettings.getString("fhirServerBaseUrl");
+            username = limsSettings.getString("username");
+            password = limsSettings.getString("password");
 
             logger.info("Configuration loaded successfully");
         } catch (Exception e) {
@@ -135,6 +152,38 @@ public class BioradD10 {
         return sampleData;
     }
 
+    public static void sendObservationsToLims(List<Map.Entry<String, String>> observations) {
+        logger.info("Sending observations to LIMS");
+
+        // Create a FHIR context
+        FhirContext ctx = FhirContext.forR4();
+
+        // Create a client
+        IGenericClient client = ctx.newRestfulGenericClient(fhirServerBaseUrl);
+
+        // Basic Authentication
+        client.registerInterceptor(new BasicAuthInterceptor(username, password));
+
+        for (Map.Entry<String, String> entry : observations) {
+            String sampleId = entry.getKey();
+            String hba1cValue = entry.getValue();
+
+            // Create an Observation resource
+            Observation observation = new Observation();
+            observation.setStatus(Observation.ObservationStatus.FINAL);
+            observation.addIdentifier(new Identifier().setSystem("http://carecode.org/fhir/identifiers/patient_sample_id").setValue(sampleId));
+            observation.getCode().addCoding().setSystem("http://loinc.org").setCode("4548-4").setDisplay("Hemoglobin A1c/Hemoglobin.total in Blood");
+            observation.setValue(new Quantity().setValue(Double.parseDouble(hba1cValue)).setUnit("%").setSystem("http://unitsofmeasure.org").setCode("%"));
+            observation.setIssued(new Date());
+
+            // Send the Observation to the FHIR server
+            MethodOutcome outcome = client.create().resource(observation).execute();
+
+            // Log the outcome
+            logger.info("Observation created with ID: " + outcome.getId().getValue());
+        }
+    }
+
     public static void sendRequests() {
         logger.info("Sending requests for today's and potentially yesterday's results");
 
@@ -145,7 +194,9 @@ public class BioradD10 {
                 String htmlContent = fetchHtmlContent(todayUrl);
                 logger.info("HTML Content for today: " + htmlContent);
                 List<Map.Entry<String, String>> todayData = extractSampleData(htmlContent);
-                logger.info("Today's data: " + todayData);
+                if (!todayData.isEmpty()) {
+                    sendObservationsToLims(todayData);
+                }
             }
 
             if (queryForYesterdayResults) {
@@ -155,7 +206,9 @@ public class BioradD10 {
                     String htmlContent = fetchHtmlContent(yesterdayUrl);
                     logger.info("HTML Content for yesterday: " + htmlContent);
                     List<Map.Entry<String, String>> yesterdayData = extractSampleData(htmlContent);
-                    logger.info("Yesterday's data: " + yesterdayData);
+                    if (!yesterdayData.isEmpty()) {
+                        sendObservationsToLims(yesterdayData);
+                    }
                 }
             }
         } catch (IOException e) {

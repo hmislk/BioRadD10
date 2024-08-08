@@ -7,10 +7,7 @@
             "baseURL": "http://172.16.241.71/Dia/DiaWeb.cgi/"
         },
         "limsSettings": {
-            "pullSampleDataEndpoint": "http://example.com/api/pullSampleData",
-            "pushSampleAcceptanceEndpoint": "http://example.com/api/pushSampleAcceptance",
-            "pushResultsEndpoint": "http://example.com/api/pushResults",
-            "pullResultsEndpoint": "http://example.com/api/pullResults",
+            "fhirServerBaseUrl": "http://example.com/fhir",
             "username": "buddhika",
             "password": "Buddhika123@",
             "departmentId": "12"
