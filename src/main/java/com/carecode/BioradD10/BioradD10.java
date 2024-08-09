@@ -17,8 +17,11 @@ import org.jsoup.select.Elements;
 import java.io.*;
 import java.net.*;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.text.SimpleDateFormat;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.logging.*;
@@ -42,6 +45,9 @@ public class BioradD10 {
     private static String fhirServerBaseUrl;
     private static String username;
     private static String password;
+    static String departmentId;
+    static String analyzerId;
+    static String analyzerName;
 
     public BioradD10() {
     }
@@ -68,6 +74,9 @@ public class BioradD10 {
             fhirServerBaseUrl = limsSettings.getString("fhirServerBaseUrl");
             username = limsSettings.getString("username");
             password = limsSettings.getString("password");
+            departmentId = analyzerDetails.getString("departmentId");
+            analyzerName = analyzerDetails.getString("analyzerName");
+            analyzerId = analyzerDetails.getString("analyzerId");
 
             logger.info("Configuration loaded successfully");
         } catch (Exception e) {
@@ -152,7 +161,7 @@ public class BioradD10 {
         return sampleData;
     }
 
-    public static void sendObservationsToLims(List<Map.Entry<String, String>> observations) {
+    public static void sendObservationsToLims(List<Map.Entry<String, String>> observations, Date date) {
         logger.info("Sending observations to LIMS");
 
         // Create a FHIR context
@@ -164,23 +173,87 @@ public class BioradD10 {
         // Basic Authentication
         client.registerInterceptor(new BasicAuthInterceptor(username, password));
 
-        for (Map.Entry<String, String> entry : observations) {
-            String sampleId = entry.getKey();
-            String hba1cValue = entry.getValue();
+        // Determine the file name for the day's sample IDs
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+        String fileName = "processed_samples_" + dateFormat.format(date) + ".txt";
+        Set<String> processedSamples = new HashSet<>();
 
-            // Create an Observation resource
-            Observation observation = new Observation();
-            observation.setStatus(Observation.ObservationStatus.FINAL);
-            observation.addIdentifier(new Identifier().setSystem("http://carecode.org/fhir/identifiers/patient_sample_id").setValue(sampleId));
-            observation.getCode().addCoding().setSystem("http://loinc.org").setCode("4548-4").setDisplay("Hemoglobin A1c/Hemoglobin.total in Blood");
-            observation.setValue(new Quantity().setValue(Double.parseDouble(hba1cValue)).setUnit("%").setSystem("http://unitsofmeasure.org").setCode("%"));
-            observation.setIssued(new Date());
+        // Load the processed samples from the file if it exists
+        try {
+            Path path = Paths.get(fileName);
+            if (Files.exists(path)) {
+                processedSamples.addAll(Files.readAllLines(path));
+            }
+        } catch (IOException e) {
+            logger.log(Level.SEVERE, "Error reading processed samples file: " + fileName, e);
+        }
 
-            // Send the Observation to the FHIR server
-            MethodOutcome outcome = client.create().resource(observation).execute();
+        // Prepare to write to the file
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(fileName, true))) {
+            for (Map.Entry<String, String> entry : observations) {
+                String sampleId = entry.getKey();
+                String hba1cValue = entry.getValue();
 
-            // Log the outcome
-            logger.info("Observation created with ID: " + outcome.getId().getValue());
+                // Check if the sample ID has already been processed
+                if (!processedSamples.contains(sampleId)) {
+                    // Create an Observation resource
+                    Observation observation = new Observation();
+                    observation.setStatus(Observation.ObservationStatus.FINAL);
+
+// Sample ID Identifier
+                    observation.addIdentifier(new Identifier()
+                            .setSystem("http://carecode.org/fhir/identifiers/patient_sample_id")
+                            .setValue(sampleId));
+
+// Analyzer Name Identifier
+                    observation.addIdentifier(new Identifier()
+                            .setSystem("http://carecode.org/fhir/identifiers/analyzer_id")
+                            .setValue(analyzerId));
+
+                    // Analyzer ID Identifier
+                    observation.addIdentifier(new Identifier()
+                            .setSystem("http://carecode.org/fhir/identifiers/analyzer_name")
+                            .setValue(analyzerName));
+
+// Department Identifier
+                    observation.addIdentifier(new Identifier()
+                            .setSystem("http://carecode.org/fhir/identifiers/department_id")
+                            .setValue(departmentId));
+
+// Observation Code (HbA1c)
+                    observation.getCode().addCoding()
+                            .setSystem("http://loinc.org")
+                            .setCode("4548-4")
+                            .setDisplay("Hemoglobin A1c/Hemoglobin.total in Blood");
+
+// HbA1c Value
+                    observation.setValue(new Quantity()
+                            .setValue(Double.parseDouble(hba1cValue))
+                            .setUnit("%")
+                            .setSystem("http://unitsofmeasure.org")
+                            .setCode("%"));
+
+// Issued Date
+                    observation.setIssued(new Date());
+
+                    // Send the Observation to the FHIR server
+                    MethodOutcome outcome = client.create().resource(observation).execute();
+
+                    // Log the outcome
+                    logger.info("Observation created with ID: " + outcome.getId().getValue());
+
+                    // Write the sample ID to the file
+                    writer.write(sampleId);
+                    writer.newLine();
+
+                    // Add the sample ID to the processed set
+                    processedSamples.add(sampleId);
+                } else {
+                    logger.info("Sample ID " + sampleId + " has already been processed for today.");
+                }
+            }
+        } catch (IOException e) {
+            logger.log(Level.SEVERE, "Error writing to processed samples file: " + fileName, e);
         }
     }
 
@@ -195,19 +268,20 @@ public class BioradD10 {
                 logger.info("HTML Content for today: " + htmlContent);
                 List<Map.Entry<String, String>> todayData = extractSampleData(htmlContent);
                 if (!todayData.isEmpty()) {
-                    sendObservationsToLims(todayData);
+                    sendObservationsToLims(todayData, new Date());
                 }
             }
 
             if (queryForYesterdayResults) {
                 LocalDate yesterday = today.minusDays(1);
+                Date yday = Date.from(yesterday.atStartOfDay(ZoneId.systemDefault()).toInstant());
                 String yesterdayUrl = generateUrlForDate(yesterday);
                 if (yesterdayUrl != null) {
                     String htmlContent = fetchHtmlContent(yesterdayUrl);
                     logger.info("HTML Content for yesterday: " + htmlContent);
                     List<Map.Entry<String, String>> yesterdayData = extractSampleData(htmlContent);
                     if (!yesterdayData.isEmpty()) {
-                        sendObservationsToLims(yesterdayData);
+                        sendObservationsToLims(yesterdayData, yday);
                     }
                 }
             }
