@@ -7,6 +7,7 @@ import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
 import java.io.*;
+import java.net.ConnectException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.file.Files;
@@ -94,7 +95,7 @@ public class BioradD10 {
         return date.replace("/", "%2F");
     }
 
-    public static String fetchHtmlContent(String urlString) throws IOException {
+    public static String fetchHtmlContent(String urlString) {
         logger.info("Fetching HTML content from URL: " + urlString);
 
         try {
@@ -106,26 +107,42 @@ public class BioradD10 {
             int responseCode = connection.getResponseCode();
             logger.info("Response Code: " + responseCode);
 
-            BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
-            String inputLine;
-            StringBuilder htmlContent = new StringBuilder();
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+                StringBuilder htmlContent = new StringBuilder();
+                String inputLine;
 
-            while ((inputLine = in.readLine()) != null) {
-                htmlContent.append(inputLine);
+                while ((inputLine = in.readLine()) != null) {
+                    htmlContent.append(inputLine);
+                }
+
+                in.close();
+                logger.info("Fetched HTML content successfully");
+                return htmlContent.toString();
+            } else {
+                logger.severe("Failed to fetch HTML content. HTTP Response Code: " + responseCode);
+                return null;
             }
-
-            in.close();
-            logger.info("Fetched HTML content successfully");
-            return htmlContent.toString();
-
+        } catch (ConnectException e) {
+            logger.log(Level.SEVERE, "Connection timed out while fetching HTML content from URL: " + urlString, e);
+            return null; // Return null to indicate the connection timed out
         } catch (IOException e) {
-            logger.log(Level.SEVERE, "IOException occurred while fetching HTML content", e);
-            throw e;
+            logger.log(Level.SEVERE, "IOException occurred while fetching HTML content from URL: " + urlString, e);
+            return null; // Return null to indicate an IO error
         }
     }
 
     public static List<Map.Entry<String, String>> extractSampleData(String htmlContent) {
         logger.info("Extracting Sample ID and HbA1c percentage from HTML content");
+
+        if (htmlContent == null) {
+            logger.info("No response from analyzer");
+            return null;
+        }
+        if (htmlContent.isEmpty()) {
+            logger.info("EMpty response");
+            return null;
+        }
 
         List<Map.Entry<String, String>> sampleData = new ArrayList<>();
 
@@ -284,33 +301,32 @@ public class BioradD10 {
     public static void sendRequests() {
         logger.info("Sending requests for today's and potentially yesterday's results");
 
-        try {
-            LocalDate today = LocalDate.now();
-            String todayUrl = generateUrlForDate(today);
-            if (todayUrl != null) {
-                String htmlContent = fetchHtmlContent(todayUrl);
-                logger.info("HTML Content for today: " + htmlContent);
+        LocalDate today = LocalDate.now();
+        String todayUrl = generateUrlForDate(today);
+        if (todayUrl != null) {
+            String htmlContent = fetchHtmlContent(todayUrl);
+            logger.info("HTML Content for today: " + htmlContent);
+            if (htmlContent != null) {
                 List<Map.Entry<String, String>> todayData = extractSampleData(htmlContent);
                 if (!todayData.isEmpty()) {
                     sendObservationsToLims(todayData, new Date());
                 }
             }
-
-            if (queryForYesterdayResults) {
-                LocalDate yesterday = today.minusDays(1);
-                Date yday = Date.from(yesterday.atStartOfDay(ZoneId.systemDefault()).toInstant());
-                String yesterdayUrl = generateUrlForDate(yesterday);
-                if (yesterdayUrl != null) {
-                    String htmlContent = fetchHtmlContent(yesterdayUrl);
-                    logger.info("HTML Content for yesterday: " + htmlContent);
+        }
+        if (queryForYesterdayResults) {
+            LocalDate yesterday = today.minusDays(1);
+            Date yday = Date.from(yesterday.atStartOfDay(ZoneId.systemDefault()).toInstant());
+            String yesterdayUrl = generateUrlForDate(yesterday);
+            if (yesterdayUrl != null) {
+                String htmlContent = fetchHtmlContent(yesterdayUrl);
+                logger.info("HTML Content for yesterday: " + htmlContent);
+                if (htmlContent != null) {
                     List<Map.Entry<String, String>> yesterdayData = extractSampleData(htmlContent);
                     if (!yesterdayData.isEmpty()) {
                         sendObservationsToLims(yesterdayData, yday);
                     }
                 }
             }
-        } catch (IOException e) {
-            logger.log(Level.SEVERE, "Exception occurred while sending requests", e);
         }
     }
 
@@ -321,23 +337,27 @@ public class BioradD10 {
             String configPath = "config.json"; // Directly referencing the config file in the project root
             loadConfig(configPath);
 
-            // TEMPORARY TESTING BLOCK
-            logger.info("Starting temporary test for sending a sample observation.");
+            boolean testing = false;
 
-            // Simulated sample observation data
-            String testSampleId = "22311";
-            String testHbA1cValue = "4.58";
+            if (testing) {
+                // TEMPORARY TESTING BLOCK
+                logger.info("Starting temporary test for sending a sample observation.");
 
-            // Create a mock observation entry
-            Map.Entry<String, String> testEntry = new AbstractMap.SimpleEntry<>(testSampleId, testHbA1cValue);
-            List<Map.Entry<String, String>> testObservations = Collections.singletonList(testEntry);
+                // Simulated sample observation data
+                String testSampleId = "22311";
+                String testHbA1cValue = "4.58";
 
-            // Send the test observation
-            sendObservationsToLims(testObservations, new Date());
+                // Create a mock observation entry
+                Map.Entry<String, String> testEntry = new AbstractMap.SimpleEntry<>(testSampleId, testHbA1cValue);
+                List<Map.Entry<String, String>> testObservations = Collections.singletonList(testEntry);
 
-            logger.info("Temporary test completed.");
+                // Send the test observation
+                sendObservationsToLims(testObservations, new Date());
 
-            System.exit(0);
+                logger.info("Temporary test completed.");
+                System.exit(0);
+
+            }
 
             // NORMAL OPERATION
             sendRequests(); // Initial request at the start
