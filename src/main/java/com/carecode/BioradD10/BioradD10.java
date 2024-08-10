@@ -325,8 +325,8 @@ public class BioradD10 {
             logger.info("Starting temporary test for sending a sample observation.");
 
             // Simulated sample observation data
-            String testSampleId = "33413223";
-            String testHbA1cValue = "5.18";
+            String testSampleId = "22311";
+            String testHbA1cValue = "4.58";
 
             // Create a mock observation entry
             Map.Entry<String, String> testEntry = new AbstractMap.SimpleEntry<>(testSampleId, testHbA1cValue);

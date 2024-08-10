@@ -3,10 +3,10 @@
         "analyzerDetails": {
             "analyzerName": "D10",
             "serialNumber": "12345-67890",
-            "analyzerId": "123",
-            "departmentAnalyzerId": "123",
+            "analyzerId": "218",
+            "departmentAnalyzerId": "22103",
             "baseURL": "http://172.16.241.71/Dia/DiaWeb.cgi/",
-            "departmentId": "12"
+            "departmentId": "9209"
             
         },
         "limsSettings": {
