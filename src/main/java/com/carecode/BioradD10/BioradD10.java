@@ -1,13 +1,5 @@
 package com.carecode.BioradD10;
 
-import org.hl7.fhir.r4.model.Observation;
-import org.hl7.fhir.r4.model.Identifier;
-import org.hl7.fhir.r4.model.CodeableConcept;
-import org.hl7.fhir.r4.model.Quantity;
-import ca.uhn.fhir.context.FhirContext;
-import ca.uhn.fhir.rest.client.api.IGenericClient;
-import ca.uhn.fhir.rest.api.MethodOutcome;
-import ca.uhn.fhir.rest.client.interceptor.BasicAuthInterceptor;
 import org.json.JSONObject;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -15,7 +7,8 @@ import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
 import java.io.*;
-import java.net.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -42,19 +35,15 @@ public class BioradD10 {
     private static String baseURL;
     private static int queryFrequencyInMinutes;
     private static boolean queryForYesterdayResults;
-    private static String fhirServerBaseUrl;
+    private static String limsServerBaseUrl;
     private static String username;
     private static String password;
     static String departmentId;
     static String analyzerId;
+    static String departmentAnalyzerId;
     static String analyzerName;
 
     public BioradD10() {
-    }
-
-    public String readResult() throws IOException {
-        logger.info("readResult method called");
-        return null;
     }
 
     public static void loadConfig(String configFilePath) {
@@ -71,12 +60,13 @@ public class BioradD10 {
             baseURL = analyzerDetails.getString("baseURL");
             queryFrequencyInMinutes = communicationSettings.getInt("queryFrequencyInMinutes");
             queryForYesterdayResults = communicationSettings.getBoolean("queryForYesterdayResults");
-            fhirServerBaseUrl = limsSettings.getString("fhirServerBaseUrl");
+            limsServerBaseUrl = limsSettings.getString("fhirServerBaseUrl"); // Renamed for LIMS Server URL
             username = limsSettings.getString("username");
             password = limsSettings.getString("password");
             departmentId = analyzerDetails.getString("departmentId");
             analyzerName = analyzerDetails.getString("analyzerName");
             analyzerId = analyzerDetails.getString("analyzerId");
+            departmentAnalyzerId = analyzerDetails.getString("departmentAnalyzerId");
 
             logger.info("Configuration loaded successfully");
         } catch (Exception e) {
@@ -164,15 +154,6 @@ public class BioradD10 {
     public static void sendObservationsToLims(List<Map.Entry<String, String>> observations, Date date) {
         logger.info("Sending observations to LIMS");
 
-        // Create a FHIR context
-        FhirContext ctx = FhirContext.forR4();
-
-        // Create a client
-        IGenericClient client = ctx.newRestfulGenericClient(fhirServerBaseUrl);
-
-        // Basic Authentication
-        client.registerInterceptor(new BasicAuthInterceptor(username, password));
-
         // Determine the file name for the day's sample IDs
         SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
         String fileName = "processed_samples_" + dateFormat.format(date) + ".txt";
@@ -182,6 +163,7 @@ public class BioradD10 {
         try {
             Path path = Paths.get(fileName);
             if (Files.exists(path)) {
+                System.out.println("Loading processed samples from file: " + fileName);
                 processedSamples.addAll(Files.readAllLines(path));
             }
         } catch (IOException e) {
@@ -192,55 +174,37 @@ public class BioradD10 {
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(fileName, true))) {
             for (Map.Entry<String, String> entry : observations) {
                 String sampleId = entry.getKey();
-                String hba1cValue = entry.getValue();
+                String observationValue = entry.getValue();
 
                 // Check if the sample ID has already been processed
                 if (!processedSamples.contains(sampleId)) {
-                    // Create an Observation resource
-                    Observation observation = new Observation();
-                    observation.setStatus(Observation.ObservationStatus.FINAL);
+                    System.out.println("Processing sample ID: " + sampleId + " with HbA1c value: " + observationValue);
 
-// Sample ID Identifier
-                    observation.addIdentifier(new Identifier()
-                            .setSystem("http://carecode.org/fhir/identifiers/patient_sample_id")
-                            .setValue(sampleId));
+                    // Create a custom JSON object to represent the observation
+                    JSONObject observationJson = new JSONObject();
+                    observationJson.put("sampleId", sampleId);
+                    observationJson.put("observationValue", observationValue);
+                    observationJson.put("analyzerId", analyzerId);
+                    observationJson.put("departmentAnalyzerId", departmentAnalyzerId);
+                    observationJson.put("analyzerName", analyzerName);
+                    observationJson.put("departmentId", departmentId);
+                    observationJson.put("username", username);
+                    observationJson.put("password", password);
+                    observationJson.put("observationValue", observationValue);
+                    observationJson.put("issuedDate", new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ").format(new Date()));
 
-// Analyzer Name Identifier
-                    observation.addIdentifier(new Identifier()
-                            .setSystem("http://carecode.org/fhir/identifiers/analyzer_id")
-                            .setValue(analyzerId));
+                    // Additional attributes for HbA1c percentage
+                    observationJson.put("observationValueCodingSystem", "http://loinc.org");
+                    observationJson.put("observationValueCode", "4548-4"); // Code for HbA1c as a percentage
+                    observationJson.put("observationUnitCodingSystem", "http://unitsofmeasure.org");
+                    observationJson.put("observationUnitCode", "%"); // Unit code for percentage
 
-                    // Analyzer ID Identifier
-                    observation.addIdentifier(new Identifier()
-                            .setSystem("http://carecode.org/fhir/identifiers/analyzer_name")
-                            .setValue(analyzerName));
+                    // Log the JSON object
+                    System.out.println("Prepared Observation JSON: " + observationJson.toString(4));
 
-// Department Identifier
-                    observation.addIdentifier(new Identifier()
-                            .setSystem("http://carecode.org/fhir/identifiers/department_id")
-                            .setValue(departmentId));
-
-// Observation Code (HbA1c)
-                    observation.getCode().addCoding()
-                            .setSystem("http://loinc.org")
-                            .setCode("4548-4")
-                            .setDisplay("Hemoglobin A1c/Hemoglobin.total in Blood");
-
-// HbA1c Value
-                    observation.setValue(new Quantity()
-                            .setValue(Double.parseDouble(hba1cValue))
-                            .setUnit("%")
-                            .setSystem("http://unitsofmeasure.org")
-                            .setCode("%"));
-
-// Issued Date
-                    observation.setIssued(new Date());
-
-                    // Send the Observation to the FHIR server
-                    MethodOutcome outcome = client.create().resource(observation).execute();
-
-                    // Log the outcome
-                    logger.info("Observation created with ID: " + outcome.getId().getValue());
+                    // Send the JSON object to the LIMS server
+                    System.out.println("Sending observation to LIMS server...");
+                    sendJsonToLimsServer(observationJson);
 
                     // Write the sample ID to the file
                     writer.write(sampleId);
@@ -254,6 +218,66 @@ public class BioradD10 {
             }
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Error writing to processed samples file: " + fileName, e);
+        }
+    }
+
+    public static void sendJsonToLimsServer(JSONObject observationJson) {
+        logger.info("Preparing to send JSON to LIMS server");
+
+        try {
+            // Log the JSON being sent
+            logger.fine("Observation JSON: " + observationJson.toString(4));
+
+            // Create the URL and open the connection
+            URL url = new URL(limsServerBaseUrl + "/observation");
+            logger.fine("LIMS Server URL: " + url.toString());
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+
+            // Set connection properties
+            connection.setDoOutput(true);
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Content-Type", "application/json");
+
+            // Add Basic Authentication header
+            String auth = username + ":" + password;
+            String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes());
+            connection.setRequestProperty("Authorization", "Basic " + encodedAuth);
+            logger.fine("Authorization Header: Basic " + encodedAuth);
+
+            // Send JSON data
+            logger.fine("Sending data...");
+            OutputStream os = connection.getOutputStream();
+            os.write(observationJson.toString().getBytes());
+            os.flush();
+            os.close();
+
+            // Get response code
+            int responseCode = connection.getResponseCode();
+            logger.info("Response Code: " + responseCode);
+
+            // Handle server response
+            if (responseCode != HttpURLConnection.HTTP_OK) {
+                BufferedReader br = new BufferedReader(new InputStreamReader((connection.getErrorStream())));
+                String output;
+                logger.severe("Error from Server:");
+                while ((output = br.readLine()) != null) {
+                    logger.severe(output);
+                }
+                br.close();
+            } else {
+                BufferedReader br = new BufferedReader(new InputStreamReader((connection.getInputStream())));
+                String output;
+                logger.info("Response from Server:");
+                while ((output = br.readLine()) != null) {
+                    logger.info(output);
+                }
+                br.close();
+            }
+
+            connection.disconnect();
+
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "Exception occurred while sending JSON to LIMS server", e);
         }
     }
 
@@ -296,6 +320,26 @@ public class BioradD10 {
         try {
             String configPath = "config.json"; // Directly referencing the config file in the project root
             loadConfig(configPath);
+
+            // TEMPORARY TESTING BLOCK
+            logger.info("Starting temporary test for sending a sample observation.");
+
+            // Simulated sample observation data
+            String testSampleId = "33413223";
+            String testHbA1cValue = "5.18";
+
+            // Create a mock observation entry
+            Map.Entry<String, String> testEntry = new AbstractMap.SimpleEntry<>(testSampleId, testHbA1cValue);
+            List<Map.Entry<String, String>> testObservations = Collections.singletonList(testEntry);
+
+            // Send the test observation
+            sendObservationsToLims(testObservations, new Date());
+
+            logger.info("Temporary test completed.");
+
+            System.exit(0);
+
+            // NORMAL OPERATION
             sendRequests(); // Initial request at the start
 
             Timer timer = new Timer();
