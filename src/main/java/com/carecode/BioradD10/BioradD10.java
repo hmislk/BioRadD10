@@ -33,7 +33,7 @@ public class BioradD10 {
         logger.addHandler(ch);
     }
 
-    private static String baseURL;
+    private static String analyzerBaseURL;
     private static int queryFrequencyInMinutes;
     private static boolean queryForYesterdayResults;
     private static String limsServerBaseUrl;
@@ -58,10 +58,10 @@ public class BioradD10 {
             JSONObject communicationSettings = middlewareSettings.getJSONObject("communication");
             JSONObject limsSettings = middlewareSettings.getJSONObject("limsSettings");
 
-            baseURL = analyzerDetails.getString("baseURL");
+            analyzerBaseURL = analyzerDetails.getString("analyzerBaseURL");
             queryFrequencyInMinutes = communicationSettings.getInt("queryFrequencyInMinutes");
             queryForYesterdayResults = communicationSettings.getBoolean("queryForYesterdayResults");
-            limsServerBaseUrl = limsSettings.getString("fhirServerBaseUrl"); // Renamed for LIMS Server URL
+            limsServerBaseUrl = limsSettings.getString("limsServerBaseUrl"); // Renamed for LIMS Server URL
             username = limsSettings.getString("username");
             password = limsSettings.getString("password");
             departmentId = analyzerDetails.getString("departmentId");
@@ -82,7 +82,7 @@ public class BioradD10 {
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy");
             String dateStr = date.format(formatter);
 
-            String url = baseURL + "?page=result&test=HBA1C&StartDate=" + encodeDate(dateStr) + "&EndDate=" + encodeDate(dateStr);
+            String url = analyzerBaseURL + "?page=result&test=HBA1C&StartDate=" + encodeDate(dateStr) + "&EndDate=" + encodeDate(dateStr);
             logger.info("Generated URL: " + url);
             return url;
         } catch (Exception e) {
