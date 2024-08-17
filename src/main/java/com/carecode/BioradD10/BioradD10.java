@@ -49,7 +49,6 @@ public class BioradD10 {
 
     public static void loadConfig(String configFilePath) {
         logger.info("Loading configuration from file: " + configFilePath);
-
         try {
             String content = new String(Files.readAllBytes(Paths.get(configFilePath)));
             JSONObject config = new JSONObject(content);
