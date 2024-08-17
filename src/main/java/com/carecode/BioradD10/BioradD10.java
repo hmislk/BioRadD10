@@ -58,10 +58,10 @@ public class BioradD10 {
             JSONObject communicationSettings = middlewareSettings.getJSONObject("communication");
             JSONObject limsSettings = middlewareSettings.getJSONObject("limsSettings");
 
-            baseURL = analyzerDetails.getString("baseURL");
+            baseURL = analyzerDetails.getString("analyzerBaseURL");
             queryFrequencyInMinutes = communicationSettings.getInt("queryFrequencyInMinutes");
             queryForYesterdayResults = communicationSettings.getBoolean("queryForYesterdayResults");
-            limsServerBaseUrl = limsSettings.getString("fhirServerBaseUrl"); // Renamed for LIMS Server URL
+            limsServerBaseUrl = limsSettings.getString("limsServerBaseUrl"); // Renamed for LIMS Server URL
             username = limsSettings.getString("username");
             password = limsSettings.getString("password");
             departmentId = analyzerDetails.getString("departmentId");
@@ -303,16 +303,16 @@ public class BioradD10 {
 
         LocalDate today = LocalDate.now();
         String todayUrl = generateUrlForDate(today);
-        if (todayUrl != null) {
-            String htmlContent = fetchHtmlContent(todayUrl);
-            logger.info("HTML Content for today: " + htmlContent);
-            if (htmlContent != null) {
-                List<Map.Entry<String, String>> todayData = extractSampleData(htmlContent);
-                if (!todayData.isEmpty()) {
-                    sendObservationsToLims(todayData, new Date());
-                }
-            }
-        }
+//        if (todayUrl != null) {
+//            String htmlContent = fetchHtmlContent(todayUrl);
+//            logger.info("HTML Content for today: " + htmlContent);
+//            if (htmlContent != null) {
+//                List<Map.Entry<String, String>> todayData = extractSampleData(htmlContent);
+//                if (!todayData.isEmpty()) {
+//                    sendObservationsToLims(todayData, new Date());
+//                }
+//            }
+//        }
         if (queryForYesterdayResults) {
             LocalDate yesterday = today.minusDays(1);
             Date yday = Date.from(yesterday.atStartOfDay(ZoneId.systemDefault()).toInstant());

@@ -4,13 +4,13 @@
             "analyzerName": "D10",
             "serialNumber": "12345-67890",
             "analyzerId": "218",
-            "departmentAnalyzerId": "22103",
-            "baseURL": "http://172.16.241.71/Dia/DiaWeb.cgi/",
+            "departmentAnalyzerId": "26554",
+            "analyzerBaseURL": "http://172.16.241.71/Dia/DiaWeb.cgi/",
             "departmentId": "9209"
             
         },
         "limsSettings": {
-            "fhirServerBaseUrl": "http://192.168.1.202:8080/ruhunuDemo/api/limsmw",
+            "limsServerBaseUrl": "http://124.43.4.189:8010/ruhunu/api/limsmw",
             "username": "buddhika",
             "password": "Buddhika123@"
         },
